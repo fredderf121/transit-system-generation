@@ -1,6 +1,8 @@
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashMap},
+    fs::File,
+    io::Write,
 };
 
 #[derive(Copy, Clone, Eq)]
@@ -23,7 +25,7 @@ impl PartialEq for HeapState {
 // Explicitly implement the trait so the queue becomes a min-heap
 // instead of a max-heap.
 impl Ord for HeapState {
-    fn cmp(&self, other: &Self) -> Ordering{
+    fn cmp(&self, other: &Self) -> Ordering {
         // Notice that the we flip the ordering on costs.
         // In case of a tie we compare positions - this step is necessary
         // to make implementations of `PartialEq` and `Ord` consistent.
@@ -38,7 +40,23 @@ impl PartialOrd for HeapState {
     }
 }
 
-fn dijkstra(start: (i32, i32), end: (i32, i32)) -> Vec<(i32, i32)> {
+fn dijkstra(
+    start: (usize, usize),
+    end: (usize, usize),
+    height_map: &Vec<Vec<i32>>,
+) -> Vec<(usize, usize)> {
+    let start = (start.0 as i32, start.1 as i32);
+    let end = (end.0 as i32, end.1 as i32);
+
+    assert!(!height_map.is_empty());
+    assert!(!height_map[0].is_empty());
+
+    let x_len = height_map.len() as i32;
+    let y_len = height_map[0].len() as i32;
+    // TODO: Use an actual 2d array instead of vec of vecs.
+    // TODO: Handle the terrible casting issue between usize and i32
+    //       - this is only a problem due to finding the neighbors in a non-infinite height map.
+
     // Maps a point to the point that it came from
     let mut visited = HashMap::new();
 
@@ -46,7 +64,7 @@ fn dijkstra(start: (i32, i32), end: (i32, i32)) -> Vec<(i32, i32)> {
 
     frontier.push(HeapState::new(0, start));
 
-assert!( visited.insert(start, start).is_none());
+    assert!(visited.insert(start, start).is_none());
 
     while let Some(curr) = frontier.pop() {
         if curr.position == end {
@@ -58,12 +76,25 @@ assert!( visited.insert(start, start).is_none());
             (curr.position.0, curr.position.1 + 1),
             (curr.position.0, curr.position.1 - 1),
         ];
-        for neighbor in neighbors {
+
+        for neighbor in neighbors.into_iter().filter_map(|(x, y)| {
+            if x >= 0 && y >= 0 && x < x_len && y < y_len {
+                Some((x, y))
+            } else {
+                None
+            }
+        }) {
             if visited.contains_key(&neighbor) {
                 continue;
             }
+            let neighbor_cost = curr.cost
+                + 1
+                + (height_map[neighbor.0 as usize][neighbor.1 as usize]
+                    - height_map[curr.position.0 as usize][curr.position.1 as usize])
+                    .checked_abs()
+                    .unwrap() as usize;
 
-            frontier.push(HeapState::new(curr.cost + 1, neighbor));
+            frontier.push(HeapState::new(neighbor_cost, neighbor));
             visited.insert(neighbor, curr.position);
         }
     }
@@ -74,10 +105,10 @@ assert!( visited.insert(start, start).is_none());
 
     let mut curr = end;
     while curr != start {
-        reverse_path.push(curr);
+        reverse_path.push((curr.0 as usize, curr.1 as usize));
         curr = *visited.get(&curr).unwrap();
     }
-    reverse_path.push(start);
+    reverse_path.push((start.0 as usize, start.1 as usize));
 
     reverse_path.reverse();
     reverse_path
@@ -122,17 +153,82 @@ fn main() {
     println!("{:?}", voxels);
 }
 
+fn write_to_vox(
+    (x_len, y_len, z_len): (usize, usize, usize),
+    voxels: &Vec<(usize, usize, usize)>,
+    file_path: &str,
+) {
+    let size_chunk = {
+        let mut size_chunk: Vec<u8> = Vec::new();
+        size_chunk.extend("SIZE".bytes());
+        size_chunk.extend((12 as u32).to_le_bytes());
+        size_chunk.extend((0 as u32).to_le_bytes());
+
+        size_chunk.extend((x_len as u32).to_le_bytes());
+        size_chunk.extend((y_len as u32).to_le_bytes());
+        size_chunk.extend((z_len as u32).to_le_bytes());
+
+        size_chunk
+    };
+
+    let xyzi_chunk = {
+        let mut xyzi_chunk: Vec<u8> = Vec::new();
+        xyzi_chunk.extend("XYZI".bytes());
+        xyzi_chunk.extend((4 + 4 * voxels.len() as u32).to_le_bytes());
+        xyzi_chunk.extend((0 as u32).to_le_bytes());
+
+        xyzi_chunk.extend((voxels.len() as u32).to_le_bytes());
+        for &(x, y, z) in voxels {
+            xyzi_chunk.extend((x as u8).to_le_bytes());
+            xyzi_chunk.extend((y as u8).to_le_bytes());
+            xyzi_chunk.extend((z as u8).to_le_bytes());
+            xyzi_chunk.extend((1 as u8).to_le_bytes());
+        }
+        // TODO: I need to also write the height map to see what's going on!!!
+
+        xyzi_chunk
+    };
+
+    let main_chunk = {
+        let mut main_chunk: Vec<u8> = Vec::new();
+        main_chunk.extend("MAIN".bytes());
+        main_chunk.extend((0 as u32).to_le_bytes());
+        main_chunk.extend(((size_chunk.len() + xyzi_chunk.len()) as u32).to_le_bytes());
+
+        main_chunk.extend(size_chunk);
+        main_chunk.extend(xyzi_chunk);
+        main_chunk
+    };
+
+    let mut vox_bytes: Vec<u8> = Vec::new();
+
+    // Header
+    vox_bytes.extend("VOX ".bytes());
+    vox_bytes.extend((150 as u32).to_le_bytes());
+
+    vox_bytes.extend(main_chunk);
+
+    let mut file = File::create(file_path).unwrap();
+    // Write a slice of bytes to the file
+    file.write_all(&vox_bytes).unwrap();
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::{
+        collections::HashSet,
+        fs::File,
+        io::{BufRead, BufReader},
+        path::PathBuf,
+    };
 
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
 
     fn test_valid_manhattan_path(
-        start: (i32, i32),
-        end: (i32, i32),
-        path: Vec<(i32, i32)>,
+        start: (usize, usize),
+        end: (usize, usize),
+        path: &[(usize, usize)],
     ) -> Result<(), String> {
         let mut visited = HashSet::new();
         if path.len() == 0 {
@@ -156,15 +252,15 @@ mod tests {
         let mut prev = start;
         visited.insert(prev);
         for point in path.into_iter().skip(1) {
-            if !visited.insert(point) {
+            if !visited.insert(*point) {
                 return Err(format!("Path contained a duplicate point: {:?}", point));
             }
-            match ((point.0 - prev.0).abs(), (point.1 - prev.1).abs()) {
+            match ((point.0 as i32 - prev.0 as i32).abs(), (point.1 as i32 - prev.1 as i32).abs()) {
                 (1, 1) => return Err(format!("Path is not 4-connected between these points: from: {:?}, to: {:?}", prev, point)),
                 (0, 0) => unreachable!("If `path` contains two of the same points, it should be caught by the set insertion above!"),
                 _ => (),
             };
-            prev = point;
+            prev = *point;
         }
         // If the first and last elements equal the start and end, respectively,
         // and all the points in-between are 4-connected, then the path is valid!
@@ -174,10 +270,51 @@ mod tests {
     #[test]
     fn test_basic() {
         let start = (0, 0);
-        let end = (10, 10);
-        let path = dijkstra(start, end);
+        let end = (9, 9);
+        let height_map = vec![vec![0; 10]; 10];
+        let path = dijkstra(start, end, &height_map);
         dbg!(&path);
 
-        test_valid_manhattan_path(start, end, path).unwrap();
+        test_valid_manhattan_path(start, end, &path).unwrap();
+    }
+
+    #[test]
+    fn from_height_map_256_256() {
+        let mut height_map_path = PathBuf::from(format!(
+            "{}/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            "resources/test"
+        ));
+        height_map_path.push("height_map_256_256.txt");
+        let height_map_file = File::open(height_map_path).expect("no such file");
+
+        let buf = BufReader::new(height_map_file);
+        // The file is assumed to be single-space separated integers with no trailing spaces.
+        // Each row is separated by a new line, and there is no newline at the end.
+        let height_map: Vec<Vec<i32>> = buf
+            .lines()
+            .map(|line| {
+                line.unwrap()
+                    .split(' ')
+                    .map(|s| s.parse().unwrap())
+                    .collect()
+            })
+            .collect();
+
+        assert!(height_map.len() == 256 && height_map[0].len() == 256);
+
+        let start = (0, 0);
+        let end = (255, 255);
+        let path = dijkstra(start, end, &height_map);
+
+        dbg!(&path);
+
+        test_valid_manhattan_path(start, end, &path).unwrap();
+
+        let path_3d = path
+            .into_iter()
+            .map(|(x, y)| (x, y, height_map[x][y] as usize))
+            .collect::<Vec<_>>();
+        write_to_vox((256, 256, 256), &path_3d, "output.vox");
     }
 }
