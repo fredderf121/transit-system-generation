@@ -150,12 +150,12 @@ fn main() {
         voxels.push(transit_line_voxels);
     }
 
-    println!("{:?}", voxels);
+    // println!("{:?}", voxels);
 }
 
 fn write_to_vox(
     (x_len, y_len, z_len): (usize, usize, usize),
-    voxels: &Vec<(usize, usize, usize)>,
+    voxels: &[&[(usize, usize, usize)]],
     file_path: &str,
 ) {
     let size_chunk = {
@@ -171,23 +171,34 @@ fn write_to_vox(
         size_chunk
     };
 
-    let xyzi_chunk = {
-        let mut xyzi_chunk: Vec<u8> = Vec::new();
-        xyzi_chunk.extend("XYZI".bytes());
-        xyzi_chunk.extend((4 + 4 * voxels.len() as u32).to_le_bytes());
-        xyzi_chunk.extend((0 as u32).to_le_bytes());
+    let xyzi_chunk_header = {
+        let mut header: Vec<u8> = Vec::new();
+        header.extend("XYZI".bytes());
+        header.extend(
+            (4 + 4 * voxels.iter().map(|arr| arr.len()).sum::<usize>() as u32).to_le_bytes(),
+        );
+        header.extend((0 as u32).to_le_bytes());
 
-        xyzi_chunk.extend((voxels.len() as u32).to_le_bytes());
-        for &(x, y, z) in voxels {
-            xyzi_chunk.extend((x as u8).to_le_bytes());
-            xyzi_chunk.extend((y as u8).to_le_bytes());
-            xyzi_chunk.extend((z as u8).to_le_bytes());
-            xyzi_chunk.extend((1 as u8).to_le_bytes());
-        }
-        // TODO: I need to also write the height map to see what's going on!!!
-
-        xyzi_chunk
+        dbg!(voxels.iter().map(|arr| arr.len()).sum::<usize>() as u32);
+        // numVoxels
+        header.extend((voxels.iter().map(|arr| arr.len()).sum::<usize>() as u32).to_le_bytes());
+        header
     };
+
+    let xyzi_chunk = xyzi_chunk_header
+        .into_iter()
+        .chain(voxels.iter().enumerate().flat_map(|(i, voxel_group)| {
+            let mut xyzi_chunk: Vec<u8> = Vec::new();
+
+            for &(x, y, z) in voxel_group.iter() {
+                xyzi_chunk.extend((x as u8).to_le_bytes());
+                xyzi_chunk.extend((y as u8).to_le_bytes());
+                xyzi_chunk.extend((z as u8).to_le_bytes());
+                xyzi_chunk.extend((((i + 1) * 50) as u8).to_le_bytes());
+            }
+            xyzi_chunk
+        }))
+        .collect::<Vec<_>>();
 
     let main_chunk = {
         let mut main_chunk: Vec<u8> = Vec::new();
@@ -273,7 +284,7 @@ mod tests {
         let end = (9, 9);
         let height_map = vec![vec![0; 10]; 10];
         let path = dijkstra(start, end, &height_map);
-        dbg!(&path);
+        // dbg!(&path);
 
         test_valid_manhattan_path(start, end, &path).unwrap();
     }
@@ -296,7 +307,8 @@ mod tests {
             .map(|line| {
                 line.unwrap()
                     .split(' ')
-                    .map(|s| s.parse().unwrap())
+                    // max(254) so that we can hard-code +1 to the path we generate
+                    .map(|s| s.parse::<i32>().unwrap().min(254))
                     .collect()
             })
             .collect();
@@ -307,14 +319,30 @@ mod tests {
         let end = (255, 255);
         let path = dijkstra(start, end, &height_map);
 
-        dbg!(&path);
+        // dbg!(&path);
 
         test_valid_manhattan_path(start, end, &path).unwrap();
 
         let path_3d = path
             .into_iter()
-            .map(|(x, y)| (x, y, height_map[x][y] as usize))
+            .map(|(x, y)| (x, y, height_map[x][y] as usize + 1))
             .collect::<Vec<_>>();
-        write_to_vox((256, 256, 256), &path_3d, "output.vox");
+        let height_map_3d = height_map
+            .into_iter()
+            .enumerate()
+            .flat_map(|(x, col_points)| {
+                col_points
+                    .into_iter()
+                    .enumerate()
+                    .map(|(y, z)| (x, y, z as usize))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        write_to_vox(
+            (256, 256, 256),
+            &[&path_3d[..], &height_map_3d[..]],
+            // &[&path_3d[..]],
+            "output.vox",
+        );
     }
 }
