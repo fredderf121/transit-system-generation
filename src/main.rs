@@ -1,3 +1,6 @@
+mod magica_voxel;
+mod voxel;
+
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashMap},
@@ -153,77 +156,6 @@ fn main() {
     // println!("{:?}", voxels);
 }
 
-fn write_to_vox(
-    (x_len, y_len, z_len): (usize, usize, usize),
-    voxels: &[&[(usize, usize, usize)]],
-    file_path: &str,
-) {
-    let size_chunk = {
-        let mut size_chunk: Vec<u8> = Vec::new();
-        size_chunk.extend("SIZE".bytes());
-        size_chunk.extend((12 as u32).to_le_bytes());
-        size_chunk.extend((0 as u32).to_le_bytes());
-
-        size_chunk.extend((x_len as u32).to_le_bytes());
-        size_chunk.extend((y_len as u32).to_le_bytes());
-        size_chunk.extend((z_len as u32).to_le_bytes());
-
-        size_chunk
-    };
-
-    let xyzi_chunk_header = {
-        let mut header: Vec<u8> = Vec::new();
-        header.extend("XYZI".bytes());
-        header.extend(
-            (4 + 4 * voxels.iter().map(|arr| arr.len()).sum::<usize>() as u32).to_le_bytes(),
-        );
-        header.extend((0 as u32).to_le_bytes());
-
-        dbg!(voxels.iter().map(|arr| arr.len()).sum::<usize>() as u32);
-        // numVoxels
-        header.extend((voxels.iter().map(|arr| arr.len()).sum::<usize>() as u32).to_le_bytes());
-        header
-    };
-
-    let xyzi_chunk = xyzi_chunk_header
-        .into_iter()
-        .chain(voxels.iter().enumerate().flat_map(|(i, voxel_group)| {
-            let mut xyzi_chunk: Vec<u8> = Vec::new();
-
-            for &(x, y, z) in voxel_group.iter() {
-                xyzi_chunk.extend((x as u8).to_le_bytes());
-                xyzi_chunk.extend((y as u8).to_le_bytes());
-                xyzi_chunk.extend((z as u8).to_le_bytes());
-                xyzi_chunk.extend((((i + 1) * 50) as u8).to_le_bytes());
-            }
-            xyzi_chunk
-        }))
-        .collect::<Vec<_>>();
-
-    let main_chunk = {
-        let mut main_chunk: Vec<u8> = Vec::new();
-        main_chunk.extend("MAIN".bytes());
-        main_chunk.extend((0 as u32).to_le_bytes());
-        main_chunk.extend(((size_chunk.len() + xyzi_chunk.len()) as u32).to_le_bytes());
-
-        main_chunk.extend(size_chunk);
-        main_chunk.extend(xyzi_chunk);
-        main_chunk
-    };
-
-    let mut vox_bytes: Vec<u8> = Vec::new();
-
-    // Header
-    vox_bytes.extend("VOX ".bytes());
-    vox_bytes.extend((150 as u32).to_le_bytes());
-
-    vox_bytes.extend(main_chunk);
-
-    let mut file = File::create(file_path).unwrap();
-    // Write a slice of bytes to the file
-    file.write_all(&vox_bytes).unwrap();
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -338,11 +270,11 @@ mod tests {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        write_to_vox(
+        magica_voxel::write_to_vox(
             (256, 256, 256),
             &[&path_3d[..], &height_map_3d[..]],
             // &[&path_3d[..]],
-            "output.vox",
+            "output.vox".into(),
         );
     }
 }
