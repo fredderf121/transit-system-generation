@@ -1,78 +1,139 @@
 // write an iterator of points to a voxel file.
 
-use std::iter;
+use std::{io::Write, iter};
 
 use crate::voxel::Vec3;
 
-type ByteIter<'a> = Box<dyn Iterator<Item = &'a u8>>;
-trait SerializableChunk<'a> {
-    fn get_id_bytes(&self) -> ByteIter<'a>;
-    fn get_content_size_bytes(&self) -> ByteIter<'a>;
-    fn get_children_chunk_size_bytes(&self) -> ByteIter<'a>;
-    fn get_content_bytes(&self) -> ByteIter<'a>;
-    fn get_children_bytes(&self) -> ByteIter<'a>;
+trait SerializableChunk {
+    fn write_u32(e: u32, w: &mut impl Write) {
+        w.write(&e.to_le_bytes());
+    }
+    fn get_id() -> [u8; 4];
+    fn get_content_size_bytes(&self) -> u32;
+    fn get_children_size_bytes(&self) -> u32;
 
-    fn iter(&self) -> ByteIter<'a> {
-        Box::new(
-            [
-                self.get_id_bytes(),
-                self.get_content_size_bytes(),
-                self.get_children_chunk_size_bytes(),
-                self.get_content_bytes(),
-                self.get_children_bytes(),
-            ]
-            .into_iter()
-            .flat_map(|i| i),
-        )
+    fn write_id(w: &mut impl Write) {
+        w.write(&Self::get_id());
+    }
+
+    fn write_content_size(&self, w: &mut impl Write) {
+        Self::write_u32(self.get_content_size_bytes(), w);
+    }
+    fn write_children_size(&self, w: &mut impl Write) {
+        Self::write_u32(self.get_children_size_bytes(), w);
+    }
+    fn write_content(&self, w: &mut impl Write);
+    fn write_children(&self, w: &mut impl Write);
+
+    fn write(&self, w: &mut impl Write) {
+        Self::write_id(w);
+        self.write_content_size(w);
+        self.write_children_size(w);
+        self.write_content(w);
+        self.write_children(w);
     }
 }
 
-struct SizeChunk<'a> {
-    a: u8,
+struct SizeChunk {
+    size_x: u32,
+    size_y: u32,
+    size_z: u32,
 }
-impl<'a> SerializableChunk<'a> for SizeChunk<'a> {
-    fn get_id_bytes(&self) -> ByteIter<'a> {
-        Box::new("SIZE".as_bytes().iter())
+const_assert_eq!(std::mem::size_of::<SizeChunk>(), 12);
+
+impl SerializableChunk for SizeChunk {
+    fn get_id() -> [u8; 4] {
+        [b'S', b'I', b'Z', b'E']
     }
 
-    fn get_content_size_bytes(&self) -> ByteIter<'a> {
-        Box::new(iter::once(&self.a))
+    fn get_content_size_bytes(&self) -> u32 {
+        std::mem::size_of::<Self>() as u32
     }
 
-    fn get_children_chunk_size_bytes(&self) -> ByteIter<'a> {
-        todo!()
+    fn get_children_size_bytes(&self) -> u32 {
+        0
     }
 
-    fn get_content_bytes(&self) -> ByteIter<'a> {
-        todo!()
+    fn write_content(&self, w: &mut impl Write) {
+        Self::write_u32(self.size_x, w);
+        Self::write_u32(self.size_y, w);
+        Self::write_u32(self.size_z, w);
     }
 
-    fn get_children_bytes(&self) -> ByteIter<'a> {
-        todo!()
+    fn write_children(&self, w: &mut impl Write) {
+        // No children.
     }
 }
 
+struct XYZI {
+    x: u32,
+    y: u32,
+    z: u32,
+    i: u32,
+}
+const_assert_eq!(std::mem::size_of::<XYZI>(), 16);
+struct XYZIChunk<'a, I>
+where
+    &'a I: IntoIterator<Item = &'a XYZI>,
+{
+    num_voxels: u32,
+    voxels: &'a I,
+}
+impl<'a, I> SerializableChunk for XYZIChunk<'a, I>
+where
+    &'a I: IntoIterator<Item = &'a XYZI>,
+{
+    fn get_id() -> [u8; 4] {
+        [b'X', b'Y', b'Z', b'I']
+    }
+
+    fn get_content_size_bytes(&self) -> u32 {
+        self.num_voxels * std::mem::size_of::<XYZI>() as u32
+    }
+
+    fn get_children_size_bytes(&self) -> u32 {
+        0
+    }
+
+    fn write_content(&self, w: &mut impl Write) {
+        let mut count = 0;
+        for xyzi in self.voxels {
+            count += 1;
+            Self::write_u32(xyzi.x, w);
+            Self::write_u32(xyzi.y, w);
+            Self::write_u32(xyzi.z, w);
+            Self::write_u32(xyzi.i, w);
+        }
+        if count != self.num_voxels {
+            panic!("Expected {} voxels, found {}", self.num_voxels, count);
+        }
+    }
+
+    fn write_children(&self, _: &mut impl Write) {
+        // No children.
+    }
+}
 // https://github.com/ephtracy/voxel-model/blob/master/MagicaVoxel-file-format-vox.txt
 pub fn write_to_vox<'a, I, F>((x_len, y_len, z_len): (u32, u32, u32), voxels: I, path: F)
 where
     I: IntoIterator<Item = &'a Vec3>,
     F: ToString,
 {
-    let size_chunk = {
-        let mut size_chunk: Vec<u8> = Vec::new();
-        // chunk id
-        size_chunk.extend("SIZE".bytes());
-        // num bytes of chunk content
-        size_chunk.extend((12 as u32).to_le_bytes());
-        // num bytes of children chunks
-        size_chunk.extend((0 as u32).to_le_bytes());
+    // let size_chunk = {
+    //     let mut size_chunk: Vec<u8> = Vec::new();
+    //     // chunk id
+    //     size_chunk.extend("SIZE".bytes());
+    //     // num bytes of chunk content
+    //     size_chunk.extend((12 as u32).to_le_bytes());
+    //     // num bytes of children chunks
+    //     size_chunk.extend((0 as u32).to_le_bytes());
 
-        size_chunk.extend((x_len as u32).to_le_bytes());
-        size_chunk.extend((y_len as u32).to_le_bytes());
-        size_chunk.extend((z_len as u32).to_le_bytes());
+    //     size_chunk.extend((x_len as u32).to_le_bytes());
+    //     size_chunk.extend((y_len as u32).to_le_bytes());
+    //     size_chunk.extend((z_len as u32).to_le_bytes());
 
-        size_chunk
-    };
+    //     size_chunk
+    // };
 
     let xyzi_chunk_header = {
         let mut header: Vec<u8> = Vec::new();

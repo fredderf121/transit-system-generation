@@ -7,6 +7,8 @@ use std::{
     fs::File,
     io::Write,
 };
+#[macro_use]
+extern crate static_assertions;
 
 #[derive(Copy, Clone, Eq)]
 struct HeapState {
