@@ -3,6 +3,7 @@ use typenum::B1;
 use typenum::U0;
 use typenum::{Diff, ToInt, UInt};
 
+use std::error::Error;
 use std::ops::Sub;
 
 type Depth = u32;
@@ -12,6 +13,29 @@ type Depth = u32;
 /// in the first octant (+, +, +).
 struct SparseVoxelOctree {
     children: Box<dyn ChildrenNodeTrait>,
+}
+
+struct MaskUInt<const B: Depth>(Depth);
+
+impl<const B: Depth>  TryFrom<Depth> for MaskUInt<B> {
+    type Error = String;
+
+    fn try_from(value: Depth) -> Result<Self, Self::Error> {
+        if value < 1 << B {Ok(Self(value))} else {Err("Too large".into())}
+    }
+}
+
+impl<const B: Depth> MaskUInt<B> {
+    fn remove_top_bit(self) -> MaskUInt<{B - 1}> {
+        // NOTE: We design the constructors such that self.0 is guaranteed to be less than 2 ^ Depth.
+        assert!(self.0 < (1 << B));
+        MaskUInt::<{B - 1}>(self.0 & !(1 << B))
+    }
+}
+
+fn test() {
+    let x = MaskUInt::<0>::try_from(3);
+    let y = x.unwrap().remove_top_bit();
 }
 
 macro_rules! children_node {
