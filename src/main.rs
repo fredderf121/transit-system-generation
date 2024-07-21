@@ -1,5 +1,7 @@
+#![feature(generic_const_exprs)]
 mod magica_voxel;
 mod voxel;
+mod voxel_model;
 
 use std::{
     cmp::Ordering,

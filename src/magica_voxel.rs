@@ -12,6 +12,14 @@ trait SerializableChunk {
     fn get_content_size_bytes(&self) -> u32;
     fn get_children_size_bytes(&self) -> u32;
 
+    fn get_total_size_bytes(&self) -> u32 {
+        Self::get_id().len() as u32
+            + self.get_content_size_bytes()
+            + self.get_children_size_bytes()
+            + std::mem::size_of_val(&self.get_content_size_bytes()) as u32
+            + std::mem::size_of_val(&self.get_children_size_bytes()) as u32
+    }
+
     fn write_id(w: &mut impl Write) {
         w.write(&Self::get_id());
     }
@@ -60,7 +68,7 @@ impl SerializableChunk for SizeChunk {
         Self::write_u32(self.size_z, w);
     }
 
-    fn write_children(&self, w: &mut impl Write) {
+    fn write_children(&self, _: &mut impl Write) {
         // No children.
     }
 }
@@ -72,14 +80,11 @@ struct XYZI {
     i: u32,
 }
 const_assert_eq!(std::mem::size_of::<XYZI>(), 16);
-struct XYZIChunk<'a, I>
-where
-    &'a I: IntoIterator<Item = &'a XYZI>,
-{
+struct XYZIChunk<I> {
     num_voxels: u32,
-    voxels: &'a I,
+    voxels: I,
 }
-impl<'a, I> SerializableChunk for XYZIChunk<'a, I>
+impl<'a, I> SerializableChunk for XYZIChunk<&'a I>
 where
     &'a I: IntoIterator<Item = &'a XYZI>,
 {
@@ -111,6 +116,41 @@ where
 
     fn write_children(&self, _: &mut impl Write) {
         // No children.
+    }
+}
+
+struct MainChunk<I> {
+    models: Vec<(SizeChunk, XYZIChunk<I>)>,
+}
+
+impl<'a, I> SerializableChunk for MainChunk<&'a I>
+where
+    &'a I: IntoIterator<Item = &'a XYZI>,
+{
+    fn get_id() -> [u8; 4] {
+        [b'M', b'A', b'I', b'N']
+    }
+
+    fn get_content_size_bytes(&self) -> u32 {
+        // No content.
+        0
+    }
+
+    fn get_children_size_bytes(&self) -> u32 {
+        self.models.iter().fold(0, |acc, (sc, xyzic)| {
+            acc + sc.get_total_size_bytes() + xyzic.get_total_size_bytes()
+        })
+    }
+
+    fn write_content(&self, _: &mut impl Write) {
+        // No content
+    }
+
+    fn write_children(&self, w: &mut impl Write) {
+        for (size_chunk, xyzi_chunk) in &self.models {
+            size_chunk.write(w);
+            xyzi_chunk.write(w);
+        }
     }
 }
 // https://github.com/ephtracy/voxel-model/blob/master/MagicaVoxel-file-format-vox.txt
