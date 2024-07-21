@@ -14,31 +14,51 @@ struct SparseVoxelOctree {
     children: Box<dyn ChildrenNodeTrait>,
 }
 
+macro_rules! children_node {
+    ($e:expr, $m:tt) => {
+        match $e {
+            0 => <U0 as OctreeDepth>::ChildrenNode::$m(),
+            _ => todo!(),
+        }
+    };
+}
+
 impl SparseVoxelOctree {
     fn new(d: Depth) -> Self {
-        let c = match d {
-            0 => Box::new(<U0 as OctreeDepth>::ChildrenNode::new(0)),
-            _ => todo!(),
-        };
-        Self { children: c }
+        let c = children_node!(d, new);
+        Self {
+            children: Box::new(c),
+        }
     }
 }
 
 type PointData = u32;
+type Coord = u32;
 
 /// For Octrees of depth 1, N will be an array of elements that correspond to each point (e.g., colors)
 /// For Octrees of depth > 1, N will be simply another OctreeNode.
-struct OctreeNode<N, const D: Depth>([N; 8]);
+struct OctreeNode<E, const D: Depth>([E; 8]);
 
-impl<N, const D: Depth> OctreeNode<N, D> {
-    fn new(e: N) -> Self {
-        Self([e; 8])
+impl<E: Default + Copy, const D: Depth> OctreeNode<E, D> {
+    fn new() -> Self {
+        Self([E::default(); 8])
+    }
+
+    fn exists(x: Coord, y: Coord, z: Coord) -> bool {
+        false
     }
 }
 trait OctreeDepth {
     type ChildrenNode: ChildrenNodeTrait;
+    const DEPTH: Depth;
+    fn contains(c: &Self::ChildrenNode, c: OctreeCoord) -> bool;
 }
 
+struct OctreeCoord {
+    x: Coord,
+    y: Coord,
+    z: Coord,
+}
 trait ChildrenNodeTrait {
     fn get_depth(&self) -> Depth;
 }
@@ -49,8 +69,23 @@ impl<N, const D: Depth> ChildrenNodeTrait for OctreeNode<N, D> {
     }
 }
 
+fn is_in_bounds(c: &OctreeCoord, d: Depth) -> bool {
+    let max = 1 << d;
+    c.x < max && c.y < max && c.z < max
+}
+
 impl OctreeDepth for U0 {
-    type ChildrenNode = OctreeNode<PointData, { <U0 as ToInt<Depth>>::INT }>;
+    const DEPTH: Depth = <U0 as ToInt<Depth>>::INT;
+    type ChildrenNode = OctreeNode<PointData, { Self::DEPTH }>;
+    fn contains(children: &Self::ChildrenNode, coord: OctreeCoord) -> bool {
+        if !is_in_bounds(&coord, Self::DEPTH) {
+            return false;
+        }
+        let idx = (((coord.x >> Self::DEPTH) & 1) << 2)
+            | (((coord.y >> Self::DEPTH) & 1) << 1)
+            | (((coord.z >> Self::DEPTH) & 1) << 0);
+        return children.0[idx as usize] != 0;
+    }
 }
 
 impl<U, B> OctreeDepth for UInt<U, B>
@@ -68,6 +103,20 @@ where
         Option<Box<<Diff<UInt<U, B>, B1> as OctreeDepth>::ChildrenNode>>,
         { <UInt<U, B> as ToInt<Depth>>::INT },
     >;
+
+    fn contains(children: &Self::ChildrenNode, coord: OctreeCoord) -> bool {
+        if !is_in_bounds(&coord, Self::DEPTH) {
+            return false;
+        }
+        let idx = (((coord.x >> Self::DEPTH) & 1) << 2)
+            | (((coord.y >> Self::DEPTH) & 1) << 1)
+            | (((coord.z >> Self::DEPTH) & 1) << 0);
+        let inner_coord = OctreeCoord {
+            // TODO: SET the DEPTH-th bit to 0
+            x: coord.x
+        }
+        return children.0[idx as usize] != 0;
+    }
 }
 
 impl SparseVoxelOctree {
