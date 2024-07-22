@@ -6,8 +6,6 @@ mod voxel_model;
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashMap},
-    fs::File,
-    io::Write,
 };
 #[macro_use]
 extern crate static_assertions;
