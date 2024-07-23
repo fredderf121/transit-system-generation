@@ -1,19 +1,74 @@
-use typenum::Unsigned;
-use typenum::B1;
-use typenum::U0;
-use typenum::{Diff, ToInt, UInt};
+use std::ops::Deref;
 
-use std::error::Error;
-use std::ops::Sub;
+// TODO: create OctreeD0 through OctreeD31 (hardcoded types)
+type OctreeD0 = OctreeNode<PointData>;
+type OctreeD1 = OctreeNode<Option<Box<OctreeD0>>>;
+type OctreeD2 = OctreeNode<Option<Box<OctreeD1>>>;
+type OctreeD3 = OctreeNode<Option<Box<OctreeD2>>>;
+type OctreeD4 = OctreeNode<Option<Box<OctreeD3>>>;
+type OctreeD5 = OctreeNode<Option<Box<OctreeD4>>>;
+type OctreeD6 = OctreeNode<Option<Box<OctreeD5>>>;
+type OctreeD7 = OctreeNode<Option<Box<OctreeD6>>>;
+type OctreeD8 = OctreeNode<Option<Box<OctreeD7>>>;
+type OctreeD9 = OctreeNode<Option<Box<OctreeD8>>>;
+type OctreeD10 = OctreeNode<Option<Box<OctreeD9>>>;
+type OctreeD11 = OctreeNode<Option<Box<OctreeD10>>>;
+type OctreeD12 = OctreeNode<Option<Box<OctreeD11>>>;
+type OctreeD13 = OctreeNode<Option<Box<OctreeD12>>>;
+type OctreeD14 = OctreeNode<Option<Box<OctreeD13>>>;
+type OctreeD15 = OctreeNode<Option<Box<OctreeD14>>>;
+type OctreeD16 = OctreeNode<Option<Box<OctreeD15>>>;
+type OctreeD17 = OctreeNode<Option<Box<OctreeD16>>>;
+type OctreeD18 = OctreeNode<Option<Box<OctreeD17>>>;
+type OctreeD19 = OctreeNode<Option<Box<OctreeD18>>>;
+type OctreeD20 = OctreeNode<Option<Box<OctreeD19>>>;
+type OctreeD21 = OctreeNode<Option<Box<OctreeD20>>>;
+type OctreeD22 = OctreeNode<Option<Box<OctreeD21>>>;
+type OctreeD23 = OctreeNode<Option<Box<OctreeD22>>>;
+type OctreeD24 = OctreeNode<Option<Box<OctreeD23>>>;
+type OctreeD25 = OctreeNode<Option<Box<OctreeD24>>>;
+type OctreeD26 = OctreeNode<Option<Box<OctreeD25>>>;
+type OctreeD27 = OctreeNode<Option<Box<OctreeD26>>>;
+type OctreeD28 = OctreeNode<Option<Box<OctreeD27>>>;
+type OctreeD29 = OctreeNode<Option<Box<OctreeD28>>>;
+type OctreeD30 = OctreeNode<Option<Box<OctreeD29>>>;
+type OctreeD31 = OctreeNode<Option<Box<OctreeD30>>>;
 
-type Depth = u32;
-/// Dimension and Coordinate System
-/// The SVO's coordinate system is at the origin and covers a cube region.
-/// It is divided into 8 octants, where importantly, the origin (0, 0, 0), is placed
-/// in the first octant (+, +, +).
-struct SparseVoxelOctree {
-    children: Box<dyn ChildrenNodeTrait>,
+enum Octree {
+    OctreeD0(OctreeD0),
+    OctreeD1(OctreeD1),
+    OctreeD2(OctreeD2),
+    OctreeD3(OctreeD3),
+    OctreeD4(OctreeD4),
+    OctreeD5(OctreeD5),
+    OctreeD6(OctreeD6),
+    OctreeD7(OctreeD7),
+    OctreeD8(OctreeD8),
+    OctreeD9(OctreeD9),
+    OctreeD10(OctreeD10),
+    OctreeD11(OctreeD11),
+    OctreeD12(OctreeD12),
+    OctreeD13(OctreeD13),
+    OctreeD14(OctreeD14),
+    OctreeD15(OctreeD15),
+    OctreeD16(OctreeD16),
+    OctreeD17(OctreeD17),
+    OctreeD18(OctreeD18),
+    OctreeD19(OctreeD19),
+    OctreeD20(OctreeD20),
+    OctreeD21(OctreeD21),
+    OctreeD22(OctreeD22),
+    OctreeD23(OctreeD23),
+    OctreeD24(OctreeD24),
+    OctreeD25(OctreeD25),
+    OctreeD26(OctreeD26),
+    OctreeD27(OctreeD27),
+    OctreeD28(OctreeD28),
+    OctreeD29(OctreeD29),
+    OctreeD30(OctreeD30),
+    OctreeD31(OctreeD31),
 }
+type Depth = u32;
 
 struct MaskUInt<const B: Depth>(Depth);
 
@@ -30,57 +85,82 @@ impl<const B: Depth> TryFrom<Depth> for MaskUInt<B> {
 }
 
 impl<const B: Depth> MaskUInt<B> {
-    fn remove_top_bit(self) -> MaskUInt<{ B - 1 }> {
+    const fn remove_top_bit(self) -> MaskUInt<{ B - 1 }> {
         // NOTE: We design the constructors such that self.0 is guaranteed to be less than 2 ^ Depth.
         assert!(self.0 < (1 << B));
         MaskUInt::<{ B - 1 }>(self.0 & !(1 << B))
     }
-    fn get_top_bit(&self) -> Depth {
+    const fn get_top_bit(&self) -> Depth {
         // This invariant should hold given the design of the struct.
         assert!(self.0 >> B <= 1);
         self.0 >> B
     }
 }
 
-macro_rules! children_node {
-    ($e:expr, $m:tt) => {
-        match $e {
-            0 => <U0 as OctreeDepth>::ChildrenNode::$m(),
-            _ => todo!(),
-        }
-    };
+type PointData = u32;
+type Coord<const B: Depth> = MaskUInt<B>;
+
+struct OctreePoint<const B: Depth> {
+    x: Coord<B>,
+    y: Coord<B>,
+    z: Coord<B>,
 }
 
-impl SparseVoxelOctree {
-    fn new(d: Depth) -> Self {
-        let c = children_node!(d, new);
-        Self {
-            children: Box::new(c),
+impl<const B: Depth> OctreePoint<B> {
+    fn decrease_depth(self) -> OctreePoint<{ B - 1 }> {
+        OctreePoint::<{ B - 1 }> {
+            x: self.x.remove_top_bit(),
+            y: self.y.remove_top_bit(),
+            z: self.z.remove_top_bit(),
         }
     }
 }
 
-type PointData = u32;
-type Coord<const B: Depth> = MaskUInt<B>;
+impl<const B: Depth> Deref for MaskUInt<B> {
+    type Target = Depth;
 
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 /// For Octrees of depth 1, N will be an array of elements that correspond to each point (e.g., colors)
 /// For Octrees of depth > 1, N will be simply another OctreeNode.
 struct OctreeNode<E>([E; 8]);
-trait Nested<const D: Depth> {}
-impl Nested<0> for OctreeNode<PointData> {}
+trait Nested<const D: Depth> {
+    fn contains_inner(&self, point: OctreePoint<D>) -> bool;
 
-impl<T: Nested<{ D - 1 }>, const D: Depth> Nested<D> for OctreeNode<Option<Box<T>>> {}
+    fn contains(&self, point: impl TryInto<OctreePoint<D>>) -> bool {
+        let Ok(coord) = point.try_into() else {
+            return false;
+        };
+        self.contains_inner(coord)
+    }
+    fn get_idx(point: &OctreePoint<D>) -> Depth {
+        (point.x.get_top_bit() << 2) | (point.y.get_top_bit() << 1) | (point.z.get_top_bit() << 0)
+    }
+}
+impl Nested<0> for OctreeNode<PointData> {
+    fn contains_inner(&self, point: OctreePoint<0>) -> bool {
+        let idx = Self::get_idx(&point);
+        todo!("Need to determine what counts as an empty leaf")
+        // children.0[idx as usize] != 0
+    }
+}
+
+impl<T: Nested<{ D - 1 }>, const D: Depth> Nested<D> for OctreeNode<Option<Box<T>>> {
+    fn contains_inner(&self, point: OctreePoint<D>) -> bool {
+        let idx = Self::get_idx(&point);
+        if let Some(ref child) = self.0[idx as usize] {
+            return child.contains_inner(point.decrease_depth());
+        }
+        false
+    }
+}
 
 impl<E: Default + Copy> OctreeNode<E> {
     fn new() -> Self {
         Self([E::default(); 8])
     }
-}
-trait OctreeDepth<const D: Depth> {
-    type ChildrenNode;
-    fn contains<OC>(children_node: &Self::ChildrenNode, octree_coord: OC) -> bool
-    where
-        OC: TryInto<OctreeCoord<D>>;
 }
 
 struct OctreeCoord<const B: Depth> {
@@ -94,64 +174,6 @@ impl<const D: Depth> TryFrom<u32> for OctreeCoord<D> {
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         todo!()
     }
-}
-
-impl OctreeDepth<{ <Self as ToInt<Depth>>::INT }> for U0 {
-    type ChildrenNode = OctreeNode<PointData>;
-
-    fn contains<TryIntoOctreeCoord>(
-        children: &Self::ChildrenNode,
-        octree_coord: TryIntoOctreeCoord,
-    ) -> bool
-    where
-        TryIntoOctreeCoord: TryInto<OctreeCoord<{ <Self as ToInt<Depth>>::INT }>>,
-    {
-        let Ok(coord) = octree_coord.try_into() else {
-            return false;
-        };
-
-        let idx = (coord.x.get_top_bit() << 2)
-            | (coord.y.get_top_bit() << 1)
-            | (coord.z.get_top_bit() << 0);
-        todo!("Need to determine what counts as an empty leaf")
-        // children.0[idx as usize] != 0
-    }
-}
-
-impl<U, B> OctreeDepth<{ <Self as ToInt<Depth>>::INT }> for UInt<U, B>
-where
-    // You must be able to subtract 1 from the depth (excludes U0 basis case)
-    Self: Sub<B1> + ToInt<Depth>,
-    // Depth - 1 must also be a valid OctreeDepth (inductive)
-    Diff<Self, B1>: OctreeDepth<{ <Self as ToInt<Depth>>::INT }>,
-    OctreeNode<
-        Option<Box<<Diff<Self, B1> as OctreeDepth<{ <Self as ToInt<Depth>>::INT }>>::ChildrenNode>>,
-    >: Sized,
-{
-    type ChildrenNode = OctreeNode<
-        Option<Box<<Diff<Self, B1> as OctreeDepth<{ <Self as ToInt<Depth>>::INT }>>::ChildrenNode>>,
-    >;
-
-    fn contains<OC>(children: &Self::ChildrenNode, octree_coord: OC) -> bool
-    where
-        OC: TryInto<OctreeCoord<{ <Self as ToInt<Depth>>::INT }>>,
-    {
-        todo!()
-    }
-
-    // fn contains(children: &Self::ChildrenNode, coord: OctreeCoord) -> bool {
-    //     if !is_in_bounds(&coord, Self::DEPTH) {
-    //         return false;
-    //     }
-    //     let idx = (((coord.x >> Self::DEPTH) & 1) << 2)
-    //         | (((coord.y >> Self::DEPTH) & 1) << 1)
-    //         | (((coord.z >> Self::DEPTH) & 1) << 0);
-    //     let inner_coord = OctreeCoord {
-    //         // TODO: SET the DEPTH-th bit to 0
-    //         x: coord.x
-    //     }
-    //     return children.0[idx as usize] != 0;
-    // }
 }
 
 impl SparseVoxelOctree {
