@@ -66,15 +66,15 @@ type Coord<const B: Depth> = MaskUInt<B>;
 /// For Octrees of depth 1, N will be an array of elements that correspond to each point (e.g., colors)
 /// For Octrees of depth > 1, N will be simply another OctreeNode.
 struct OctreeNode<E>([E; 8]);
+trait Nested<const D: Depth> {}
+impl Nested<0> for OctreeNode<PointData> {}
+
+impl<T: Nested<{ D - 1 }>, const D: Depth> Nested<D> for OctreeNode<Option<Box<T>>> {}
 
 impl<E: Default + Copy> OctreeNode<E> {
     fn new() -> Self {
         Self([E::default(); 8])
     }
-
-    // fn exists(x: Coord<D>, y: Coord<D>, z: Coord<D>) -> bool {
-    //     false
-    // }
 }
 trait OctreeDepth<const D: Depth> {
     type ChildrenNode;
